@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milestones in U.S. Healthcare</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden; /* Prevent horizontal scroll from shake animation */
+        }
+        /* Custom styles for animations and specific elements */
+        .timeline-container {
+            min-height: 200px; /* Ensure enough space for dropping */
+        }
+        .event-card {
+            cursor: grab;
+            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+            /* Added justify-between to push new content to bottom if it's a flex-col */
+            display: flex; /* Ensure flex for internal alignment */
+            flex-direction: column; /* For stacking icon, name, and potential links */
+            align-items: center; /* Center horizontally */
+            justify-content: center; /* Initial alignment, will become space-between when links added */
+            box-sizing: border-box; /* Include padding in element's total width and height */
+        }
+        .event-card.dragging {
+            opacity: 0.7;
+            transform: scale(1.05);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            z-index: 1000; /* Bring dragging card to front */
+        }
+        .event-card.correct {
+            border: 3px solid;
+            animation: glowing 1.5s infinite alternate;
+            justify-content: space-between; /* To push links to the bottom when correctly placed */
+            padding-bottom: 8px; /* Give some room for the links */
+        }
+        /* Tailwind allows dynamic border colors via classes like `border-green-500` */
+        .event-card.wrong {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+            transform: translate3d(0, 0, 0);
+            backface-visibility: hidden;
+            perspective: 1000px;
+        }
+        @keyframes glowing {
+            0% { box-shadow: 0 0 5px #a7f3d0, 0 0 10px #a7f3d0, 0 0 15px #a7f3d0; border-color: #34d399; } /* Tailwind green-200, green-500 */
+            100% { box-shadow: 0 0 20px #a7f3d0, 0 0 30px #a7f3d0, 0 0 40px #a7f3d0; border-color: #10b981; } /* Tailwind green-200, green-600 */
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+        }
+
+        /* Responsive styling for timeline cells */
+        .timeline-cell {
+            min-width: 150px; /* Consistent minimum width for each cell */
+            height: 120px; /* Increased height to accommodate links */
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-white min-h-screen flex items-center justify-center p-4">
+
+    <!-- Message Box (instead of alert) -->
+    <div id="messageBox" class="message-box hidden bg-white shadow-xl rounded-lg p-6 max-w-sm text-center border-t-4 border-blue-500 transform scale-0 transition-transform duration-300 ease-out">
+        <p id="messageText" class="text-lg font-semibold text-gray-800"></p>
+        <button id="messageCloseBtn" class="mt-4 px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors duration-200">OK</button>
+    </div>
+
+    <!-- Main Game Container -->
+    <div id="gameContainer" class="bg-white p-8 rounded-2xl shadow-2xl max-w-6xl w-full border border-gray-100 relative">
+
+        <!-- Start Screen -->
+        <div id="startScreen" class="text-center">
+            <h1 class="text-4xl font-extrabold text-blue-700 mb-6">Milestones in U.S. Healthcare</h1>
+            <p class="text-lg text-gray-700 mb-8 max-w-2xl mx-auto">
+                Welcome to the "Milestones in U.S. Healthcare" timeline game!
+                Your task is to drag and drop event cards onto the timeline in their correct chronological order.
+                If you're correct, the card will snap into place with a glowing highlight. If wrong, it will bounce back.
+                Good luck!
+            </p>
+            <button id="startGameBtn" class="px-10 py-4 bg-blue-600 text-white text-xl font-bold rounded-full shadow-lg hover:bg-blue-700 hover:scale-105 transform transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300">
+                Start Game
+            </button>
+        </div>
+
+        <!-- Game Play Screen -->
+        <div id="gamePlayScreen" class="hidden">
+            <h2 class="text-3xl font-bold text-blue-600 mb-6 text-center">Place the Milestones on the Timeline</h2>
+
+            <!-- Draggable Event Cards Container -->
+            <div id="eventCardsContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-10 p-4 bg-gray-50 rounded-lg shadow-inner overflow-auto max-h-48">
+                <!-- Event cards will be dynamically loaded here -->
+            </div>
+
+            <!-- Timeline -->
+            <!-- The main timeline container now simply provides the scrollbar -->
+            <div id="timeline" class="relative timeline-container overflow-x-auto">
+                <!-- Inner container for all scrollable timeline content -->
+                <div id="timelineContent" class="flex flex-nowrap items-end border-b-4 border-gray-300 pt-8 pb-4 relative">
+                    <div class="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-blue-300 via-purple-300 to-red-300 rounded-t-lg opacity-50"></div>
+                    <!-- Timeline cells (drop zones) and date markers will be dynamically loaded here by JS -->
+                </div>
+            </div>
+
+            <!-- Placed Cards Display -->
+            <div id="placedCardsDisplay" class="absolute top-0 left-0 right-0 bottom-0 pointer-events-none">
+                <!-- Dynamically placed cards will go here to keep them separate from original container -->
+            </div>
+        </div>
+
+        <!-- End Game Summary Screen -->
+        <div id="endGameScreen" class="hidden text-center">
+            <h2 class="text-4xl font-extrabold text-green-700 mb-6">Game Over! Well Done!</h2>
+            <p id="finalScore" class="text-2xl font-semibold text-gray-800 mb-8"></p>
+            <div id="summaryContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left max-h-96 overflow-y-auto p-4 bg-gray-50 rounded-lg shadow-inner">
+                <!-- Summaries will be dynamically loaded here -->
+            </div>
+            <button id="restartGameBtn" class="mt-8 px-8 py-3 bg-blue-600 text-white text-lg font-bold rounded-full shadow-lg hover:bg-blue-700 hover:scale-105 transform transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300">
+                Play Again
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // Array of U.S. Healthcare milestones
+        const events = [
+            { id: 'ama', year: 1847, name: 'AMA Founded', icon: 'fas fa-stethoscope',
+              summary: 'The American Medical Association (AMA) was founded, aiming to standardize medical education and practice.',
+              wiki: 'https://en.wikipedia.org/wiki/American_Medical_Association',
+              youtube: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }, // Placeholder YouTube link (not explicitly provided, keeping old one)
+            { id: 'flexner', year: 1910, name: 'Flexner Report', icon: 'fas fa-book-medical',
+              summary: 'The Flexner Report drastically reformed medical education in the U.S. and Canada, emphasizing scientific rigor and hospital-based training.',
+              wiki: 'https://en.wikipedia.org/wiki/Flexner_Report',
+              youtube: 'https://www.youtube.com/watch?v=KIh29MJOXhc' }, // Updated YouTube
+            { id: 'sheppard_towner', year: 1921, name: 'Sheppard-Towner Act', icon: 'fas fa-baby',
+              summary: 'The Sheppard-Towner Act provided federal funding for maternal and child health programs, aiming to reduce infant and maternal mortality.',
+              wiki: 'https://en.wikipedia.org/wiki/Sheppard%E2%80%93Towner_Act',
+              youtube: 'https://www.youtube.com/watch?v=TjpJX6_eQuI' }, // New Event
+            { id: 'bluecross', year: 1929, name: 'First Blue Cross Plan', icon: 'fas fa-hand-holding-medical',
+              summary: 'The first Blue Cross hospital insurance plan was established at Baylor University, marking the beginning of modern health insurance.',
+              wiki: 'https://en.wikipedia.org/wiki/Blue_Cross_Blue_Shield_Association',
+              youtube: 'https://www.youtube.com/watch?v=S9xdJgPWO-w' }, // Updated YouTube
+            { id: 'social_security', year: 1935, name: 'Social Security Act', icon: 'fas fa-users',
+              summary: 'The Social Security Act established a foundation for public health funding, supporting maternal and child health services and aid to the blind.',
+              wiki: 'https://en.wikipedia.org/wiki/Social_Security_Act',
+              youtube: 'https://www.youtube.com/watch?v=Oa4FmndhluU' }, // Updated YouTube
+            { id: 'hill_burton', year: 1946, name: 'Hill-Burton Act', icon: 'fas fa-hospital-alt',
+              summary: 'The Hill-Burton Act provided federal grants and loans to construct hospitals, significantly expanding healthcare infrastructure across the U.S.',
+              wiki: 'https://en.wikipedia.org/wiki/Hill%E2%80%93Burton_Act',
+              youtube: 'https://www.krcu.org/2024-12-24/almost-yesterday-the-hill-burton-act' }, // Updated YouTube
+            { id: 'kidney_transplant', year: 1954, name: 'First Kidney Transplant', icon: 'fas fa-procedures',
+              summary: 'The first successful human kidney transplant was performed, marking a significant advance in organ transplantation and medical science.',
+              wiki: 'https://en.wikipedia.org/wiki/Kidney_transplantation#History',
+              youtube: 'https://www.youtube.com/watch?v=al_H8f1cG-I' }, // New Event
+            { id: 'tax_exempt_insurance', year: 1954, name: 'Employer Health Insurance Tax-Exempt', icon: 'fas fa-briefcase-medical',
+              summary: 'Employer-sponsored health insurance premiums became tax-exempt, incentivizing the growth of employer-provided health coverage.',
+              wiki: 'https://en.wikipedia.org/wiki/Employer-sponsored_health_insurance_in_the_United_States',
+              youtube: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }, // Placeholder YouTube link (not explicitly provided, keeping old one)
+            { id: 'medicare_medicaid', year: 1965, name: 'Medicare & Medicaid', icon: 'fas fa-heartbeat',
+              summary: 'Medicare and Medicaid were established, significantly expanding health coverage to seniors, people with disabilities, and low-income individuals.',
+              wiki: 'https://en.wikipedia.org/wiki/Medicare_in_the_United_States',
+              youtube: 'https://www.youtube.com/watch?v=693XQSujAh8' }, // Updated YouTube
+            { id: 'hmo_act', year: 1973, name: 'HMO Act', icon: 'fas fa-clinic-medical',
+              summary: 'The HMO Act promoted Health Maintenance Organizations (HMOs) as a cost-effective alternative to traditional fee-for-service plans.',
+              wiki: 'https://en.wikipedia.org/wiki/Health_Maintenance_Organization_Act_of_1973',
+              youtube: 'https://www.youtube.com/watch?v=KIh29MJOXhc' }, // Updated YouTube
+            { id: 'drg', year: 1983, name: 'DRG Payment System', icon: 'fas fa-file-invoice-dollar',
+              summary: 'Medicare implemented the Diagnosis-Related Group (DRG) payment system to control costs by standardizing payments for hospital stays.',
+              wiki: 'https://en.wikipedia.org/wiki/Diagnosis-related_group',
+              youtube: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }, // Placeholder YouTube link (not explicitly provided, keeping old one)
+            { id: 'cobra', year: 1985, name: 'COBRA', icon: 'fas fa-user-friends',
+              summary: 'COBRA (Consolidated Omnibus Budget Reconciliation Act) allows individuals to continue their health coverage after leaving a job for a limited time.',
+              wiki: 'https://en.wikipedia.org/wiki/Consolidated_Omnibus_Budget_Reconciliation_Act_of_1985',
+              youtube: 'https://www.youtube.com/watch?v=HZq8qwKI_z0' }, // Updated YouTube
+            { id: 'hipaa', year: 1996, name: 'HIPAA', icon: 'fas fa-shield-alt',
+              summary: 'HIPAA (Health Insurance Portability and Accountability Act) set national standards for protecting patient health information and health insurance portability.',
+              wiki: 'https://en.wikipedia.org/wiki/Health_Insurance_Portability_and_Accountability_Act',
+              youtube: 'https://www.youtube.com/watch?v=KIh29MJOXhc' }, // Updated YouTube
+            { id: 'chip', year: 1997, name: 'CHIP Created', icon: 'fas fa-child',
+              summary: 'The Children\'s Health Insurance Program (CHIP) was created to provide low-cost health coverage to children in families who earn too much to qualify for Medicaid.',
+              wiki: 'https://en.wikipedia.org/wiki/Children%27s_Health_Insurance_Program',
+              youtube: 'https://www.youtube.com/watch?v=f9NUCvrrRz4' }, // Updated YouTube
+            { id: 'medicare_part_d', year: 2003, name: 'Medicare Part D', icon: 'fas fa-pills',
+              summary: 'Medicare Part D was enacted, providing prescription drug coverage for Medicare beneficiaries.',
+              wiki: 'https://en.wikipedia.org/wiki/Medicare_Part_D',
+              youtube: 'https://www.youtube.com/watch?v=693XQSujAh8' }, // New Event
+            { id: 'mass_reform', year: 2006, name: 'Massachusetts Health Reform', icon: 'fas fa-building',
+              summary: 'Massachusetts enacted a comprehensive health care reform law, which served as a model for the later Affordable Care Act.',
+              wiki: 'https://en.wikipedia.org/wiki/Massachusetts_Health_Care_Reform_Act_of_2006',
+              youtube: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }, // Placeholder YouTube link (not explicitly provided, keeping old one)
+            { id: 'aca', year: 2010, name: 'Affordable Care Act', icon: 'fas fa-landmark',
+              summary: 'The Affordable Care Act (ACA), also known as Obamacare, aimed to expand health insurance coverage, control healthcare costs, and improve healthcare delivery.',
+              wiki: 'https://en.wikipedia.org/wiki/Affordable_Care_Act',
+              youtube: 'https://www.youtube.com/watch?v=Sw1VEuuziPw' }, // Updated YouTube
+            { id: 'macra', year: 2015, name: 'MACRA', icon: 'fas fa-award',
+              summary: 'MACRA (Medicare Access and CHIP Reauthorization Act) reformed Medicare\'s physician payment system, moving towards value-based care.',
+              wiki: 'https://en.wikipedia.org/wiki/Medicare_Access_and_CHIP_Reauthorization_Act_of_2015',
+              youtube: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }, // Placeholder YouTube link (not explicitly provided, keeping old one)
+            { id: 'individual_mandate_removed', year: 2016, name: 'Individual Mandate Penalty Removed', icon: 'fas fa-balance-scale',
+              summary: 'The Tax Cuts and Jobs Act effectively repealed the Affordable Care Act\'s individual mandate penalty, impacting health insurance markets.',
+              wiki: 'https://en.wikipedia.org/wiki/Individual_mandate#United_States',
+              youtube: 'https://www.youtube.com/watch?v=81SNIfrMnNA' }, // New Event
+            { id: 'covid_pandemic', year: 2020, name: 'COVID-19 Pandemic', icon: 'fas fa-virus',
+              summary: 'The COVID-19 pandemic caused a global health crisis, profoundly impacting healthcare systems, public health, and policy worldwide.',
+              wiki: 'https://en.wikipedia.org/wiki/COVID-19_pandemic',
+              youtube: 'https://www.youtube.com/watch?v=9sjUe-rVbns' } // Updated YouTube
+        ];
+
+        // Sort events by year for correct chronological order
+        events.sort((a, b) => a.year - b.year);
+
+        const START_YEAR = 1840; // Extend slightly before the first event for padding
+        const END_YEAR = 2030;   // Extend slightly after the last event for padding
+        const CELL_WIDTH = 150; // Each timeline cell's fixed width
+
+        let placedCards = {}; // Stores { timelineCellId: eventId }
+        let currentDragCard = null;
+        let score = 0;
+        let isGameStarted = false;
+
+        // Declare variables for DOM elements outside of any function initially
+        // They will be assigned values inside window.onload
+        let startScreen, gamePlayScreen, endGameScreen;
+        let startGameBtn, restartGameBtn;
+        let eventCardsContainer, timelineElement, timelineContentElement, placedCardsDisplay;
+        let finalScoreElement, summaryContainer;
+        let messageBox, messageText, messageCloseBtn;
+
+        // Helper to show custom message box
+        function showMessageBox(message) {
+            if (messageBox && messageText) {
+                messageText.textContent = message;
+                messageBox.classList.remove('hidden', 'scale-0');
+                messageBox.classList.add('scale-100');
+            } else {
+                console.error("MessageBox elements not found when trying to show message:", message);
+            }
+        }
+
+        // Helper to hide custom message box
+        function hideMessageBox() {
+            if (messageBox) {
+                messageBox.classList.remove('scale-100');
+                messageBox.classList.add('scale-0');
+                setTimeout(() => {
+                    messageBox.classList.add('hidden');
+                }, 300); // Wait for transition to complete
+            }
+        }
+
+        // --- Game Initialization and Reset ---
+        function initGame() {
+            placedCards = {};
+            score = 0;
+            currentDragCard = null;
+            eventCardsContainer.innerHTML = '';
+            timelineElement.innerHTML = ''; // Clear the main timeline container
+            placedCardsDisplay.innerHTML = ''; // Clear dynamically placed cards
+            summaryContainer.innerHTML = '';
+
+            // Recreate timelineContentElement as it's cleared with timelineElement.innerHTML = ''
+            timelineElement.innerHTML = `
+                <div id="timelineContent" class="flex flex-nowrap items-end border-b-4 border-gray-300 pt-8 pb-4 relative">
+                    <div class="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-blue-300 via-purple-300 to-red-300 rounded-t-lg opacity-50"></div>
+                </div>
+            `;
+            timelineContentElement = document.getElementById('timelineContent');
+
+
+            // Shuffle events for initial card display
+            const shuffledEvents = [...events].sort(() => Math.random() - 0.5);
+
+            // Create draggable event cards
+            shuffledEvents.forEach(event => {
+                const card = document.createElement('div');
+                card.id = `card-${event.id}`;
+                card.draggable = true;
+                card.dataset.id = event.id;
+                card.dataset.year = event.year;
+                card.classList.add(
+                    'event-card', 'bg-white', 'p-4', 'rounded-lg', 'shadow-md', 'text-center',
+                    'border', 'border-gray-200',
+                    'hover:shadow-lg', 'hover:border-blue-300', 'transition-all', 'duration-200',
+                    'text-gray-800', 'text-sm'
+                );
+                card.innerHTML = `
+                    <i class="${event.icon} text-3xl text-blue-500 mb-2"></i>
+                    <span class="font-semibold">${event.name}</span>
+                `;
+                card.addEventListener('dragstart', handleDragStart);
+                card.addEventListener('dragend', handleDragEnd);
+                eventCardsContainer.appendChild(card);
+            });
+
+            // Create timeline drop zones and year markers
+            createTimelineDropZones();
+
+            // Hide start/end screens, show game play
+            startScreen.classList.add('hidden');
+            endGameScreen.classList.add('hidden');
+            gamePlayScreen.classList.remove('hidden');
+            isGameStarted = true;
+        }
+
+        function createTimelineDropZones() {
+            const numSegments = events.length;
+            // Calculate total width based on number of cells and their fixed width, plus padding for markers
+            const totalContentWidth = (numSegments * CELL_WIDTH) + (CELL_WIDTH * 2); // Each cell + 2 for start/end buffer
+
+            timelineContentElement.style.width = `${totalContentWidth}px`; // Set explicit width for inner content
+
+            // Create initial start marker, now positioned within the flow
+            const startMarker = document.createElement('div');
+            startMarker.classList.add(
+                'timeline-year-marker', 'text-gray-500', 'text-sm', 'min-w-[75px]', 'flex-shrink-0', // min-w and flex-shrink-0 for spacing
+                'flex', 'justify-center', 'items-end', 'pb-2' // Added flex for positioning text
+            );
+            startMarker.textContent = events[0].year - 10;
+            timelineContentElement.appendChild(startMarker);
+
+
+            // Create individual drop zones
+            for (let i = 0; i < numSegments; i++) {
+                const dropZone = document.createElement('div');
+                dropZone.id = `drop-zone-${i}`;
+                dropZone.dataset.index = i; // Store the correct index for this slot
+                dropZone.classList.add(
+                    'timeline-cell', 'relative', 'border-l', 'border-gray-200',
+                    'flex', 'flex-col', 'justify-start', 'items-center', 'p-2', 'h-32',
+                    'hover:bg-blue-50', 'transition-colors', 'duration-150', 'group',
+                    `min-w-[${CELL_WIDTH}px]` // Explicitly set min-w for each cell
+                );
+                dropZone.addEventListener('dragover', handleDragOver);
+                dropZone.addEventListener('dragleave', handleDragLeave);
+                dropZone.addEventListener('drop', handleDrop);
+
+                // Add year marker for each zone
+                const yearMarker = document.createElement('div');
+                yearMarker.classList.add(
+                    'absolute', 'top-0', 'mt-1', 'text-xs', 'font-medium',
+                    'text-gray-600', 'bg-white', 'px-1', 'rounded-md', 'shadow-sm',
+                    'group-hover:text-blue-700', 'transition-colors'
+                );
+                yearMarker.textContent = events[i].year; // Show the year for this specific event slot
+                dropZone.appendChild(yearMarker);
+
+                timelineContentElement.appendChild(dropZone);
+            }
+
+            // Create final end marker, also positioned within the flow
+            const endMarker = document.createElement('div');
+            endMarker.classList.add(
+                'timeline-year-marker', 'text-gray-500', 'text-sm', 'min-w-[75px]', 'flex-shrink-0', // min-w and flex-shrink-0 for spacing
+                'flex', 'justify-center', 'items-end', 'pb-2' // Added flex for positioning text
+            );
+            endMarker.textContent = events[events.length - 1].year + 10;
+            timelineContentElement.appendChild(endMarker);
+
+            // Adjust the absolute background gradient width to match the scrollable content
+            const gradientDiv = timelineContentElement.querySelector('.absolute.bg-gradient-to-r');
+            if (gradientDiv) {
+                gradientDiv.style.width = `${totalContentWidth}px`;
+            }
+        }
+
+        // --- Drag and Drop Handlers ---
+        function handleDragStart(e) {
+            currentDragCard = e.target;
+            e.dataTransfer.setData('text/plain', e.target.id); // Set data for transfer
+            e.target.classList.add('dragging');
+            // Allow drag image to be the card itself
+            e.dataTransfer.setDragImage(e.target, e.target.offsetWidth / 2, e.target.offsetHeight / 2);
+        }
+
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            currentDragCard = null;
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault(); // Crucial to allow dropping
+            // Only show hover effect if the drop zone doesn't already have a card
+            if (currentDragCard && !e.currentTarget.dataset.hasCard) {
+                e.currentTarget.classList.add('bg-blue-100', 'border-blue-400');
+            }
+        }
+
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('bg-blue-100', 'border-blue-400');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('bg-blue-100', 'border-blue-400'); // Remove hover effect
+
+            if (!currentDragCard) return;
+
+            const droppedCardId = currentDragCard.id;
+            const droppedEventId = currentDragCard.dataset.id;
+            const dropZone = e.currentTarget;
+            const dropZoneIndex = parseInt(dropZone.dataset.index);
+
+            // Check if this drop zone already has a card
+            if (dropZone.dataset.hasCard === 'true') {
+                showMessageBox("This spot is already taken! Try another one.");
+                animateCardReturn(currentDragCard);
+                return;
+            }
+
+            // Get the event object for the dropped card
+            const droppedEvent = events.find(event => event.id === droppedEventId);
+            if (!droppedEvent) return;
+
+            // Check if the dropped card's year matches the expected year for this index
+            const correctEventForZone = events[dropZoneIndex];
+
+            if (correctEventForZone && correctEventForZone.id === droppedEvent.id) {
+                // Correct placement!
+                score++;
+                currentDragCard.classList.add('correct', 'border-green-500');
+                currentDragCard.classList.remove('wrong'); // Ensure wrong class is removed if previously applied
+
+                // Add Wikipedia and YouTube links to the card
+                const linkContainer = document.createElement('div');
+                linkContainer.classList.add('flex', 'flex-wrap', 'gap-1', 'mt-2', 'justify-center', 'text-xs', 'w-full');
+
+                const wikiLink = document.createElement('a');
+                wikiLink.href = droppedEvent.wiki;
+                wikiLink.target = '_blank';
+                wikiLink.rel = 'noopener noreferrer';
+                wikiLink.classList.add(
+                    'inline-flex', 'items-center', 'px-2', 'py-1', 'bg-blue-200', 'text-blue-800',
+                    'rounded-full', 'hover:bg-blue-300', 'focus:outline-none', 'focus:ring-2', 'focus:ring-blue-400', 'focus:ring-opacity-75',
+                    'transition-colors', 'duration-200', 'shadow-sm', 'min-w-fit' // Added min-w-fit
+                );
+                wikiLink.innerHTML = `<i class="fab fa-wikipedia-w mr-1"></i> Wiki`;
+
+                const youtubeLink = document.createElement('a');
+                youtubeLink.href = droppedEvent.youtube;
+                youtubeLink.target = '_blank';
+                youtubeLink.rel = 'noopener noreferrer';
+                youtubeLink.classList.add(
+                    'inline-flex', 'items-center', 'px-2', 'py-1', 'bg-red-200', 'text-red-800',
+                    'rounded-full', 'hover:bg-red-300', 'focus:outline-none', 'focus:ring-2', 'focus:ring-red-400', 'focus:ring-opacity-75',
+                    'transition-colors', 'duration-200', 'shadow-sm', 'min-w-fit' // Added min-w-fit
+                );
+                youtubeLink.innerHTML = `<i class="fab fa-youtube mr-1"></i> YouTube`;
+
+                linkContainer.appendChild(wikiLink);
+                linkContainer.appendChild(youtubeLink);
+                currentDragCard.appendChild(linkContainer);
+
+
+                // Visually snap the card into the drop zone
+                // To keep the card at the top inside the drop zone, adjust its positioning
+                currentDragCard.style.position = 'absolute';
+                currentDragCard.style.top = '60px'; // Adjusted to accommodate links and new cell height
+                currentDragCard.style.left = '50%';
+                currentDragCard.style.transform = 'translateX(-50%)';
+                currentDragCard.style.zIndex = '10'; // Ensure it's above other elements
+
+                dropZone.appendChild(currentDragCard);
+                // Mark the drop zone as having a card
+                dropZone.dataset.hasCard = 'true';
+
+                // Remove card from original container (if it's still there, e.g., after an incorrect bounce-back)
+                const originalParent = document.getElementById(droppedCardId).parentElement;
+                if (originalParent && originalParent.id === 'eventCardsContainer') {
+                    eventCardsContainer.removeChild(currentDragCard);
+                }
+
+                // Update placedCards state
+                placedCards[dropZone.id] = droppedEventId;
+
+                // Disable dragging for this card
+                currentDragCard.draggable = false;
+                currentDragCard.style.cursor = 'default';
+
+                showMessageBox("Correct! Well done!");
+                checkGameCompletion();
+
+            } else {
+                // Incorrect placement
+                currentDragCard.classList.add('wrong', 'border-red-500');
+                showMessageBox("Oops! That's not the right spot. Try again!");
+
+                // Bounce back animation
+                animateCardReturn(currentDragCard, () => {
+                    // Remove wrong class after animation completes
+                    currentDragCard.classList.remove('wrong', 'border-red-500');
+                    // Reset card's position if it had been moved for incorrect drop
+                    currentDragCard.style.position = '';
+                    currentDragCard.style.top = '';
+                    currentDragCard.style.left = '';
+                    currentDragCard.style.transform = '';
+                    currentDragCard.style.zIndex = '';
+                });
+            }
+        }
+
+        // Animates a card back to its original container after an incorrect drop
+        function animateCardReturn(cardElement, callback = () => {}) {
+            // Remove any existing inline styles that might interfere with re-appending
+            cardElement.style.position = '';
+            cardElement.style.top = '';
+            cardElement.style.left = '';
+            cardElement.style.transform = '';
+            cardElement.style.transition = '';
+            cardElement.style.zIndex = '';
+
+            // Re-append to the original eventCardsContainer
+            eventCardsContainer.appendChild(cardElement);
+
+            // Trigger the callback if provided, after a short delay for visual feedback
+            setTimeout(callback, 500);
+        }
+
+        // --- Game Logic ---
+        function checkGameCompletion() {
+            // Check if all events are correctly placed
+            const allPlaced = Object.keys(placedCards).length === events.length;
+
+            if (allPlaced) {
+                setTimeout(endGame, 1000); // Give a moment for the last card animation
+            }
+        }
+
+        function endGame() {
+            isGameStarted = false;
+            gamePlayScreen.classList.add('hidden');
+            endGameScreen.classList.remove('hidden');
+
+            finalScoreElement.textContent = `You placed ${score} out of ${events.length} milestones correctly!`;
+
+            // Generate summaries
+            events.forEach((event, index) => {
+                const summaryCard = document.createElement('div');
+                summaryCard.classList.add(
+                    'bg-white', 'p-6', 'rounded-xl', 'shadow-lg', 'border', 'border-blue-100',
+                    'flex', 'flex-col', 'items-start', 'text-gray-800'
+                );
+                summaryCard.innerHTML = `
+                    <div class="flex items-center mb-3">
+                        <i class="${event.icon} text-3xl text-blue-600 mr-3"></i>
+                        <h3 class="text-xl font-bold text-blue-700">${event.year}: ${event.name}</h3>
+                    </div>
+                    <p class="text-base mb-4">${event.summary}</p>
+                    <div class="flex flex-wrap gap-3 mt-auto w-full">
+                        <a href="${event.wiki}" target="_blank" rel="noopener noreferrer"
+                           class="inline-flex items-center px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-full
+                                  hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75
+                                  transition-colors duration-200 shadow-sm">
+                            <i class="fab fa-wikipedia-w mr-2"></i> Wikipedia
+                        </a>
+                        <a href="${event.youtube}" target="_blank" rel="noopener noreferrer"
+                           class="inline-flex items-center px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-full
+                                  hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-75
+                                  transition-colors duration-200 shadow-sm">
+                            <i class="fab fa-youtube mr-2"></i> YouTube
+                        </a>
+                    </div>
+                `;
+                summaryContainer.appendChild(summaryCard);
+            });
+        }
+
+        // --- Event Listeners for Buttons ---
+        // These are now added inside the window.onload function to ensure elements exist
+        // startGameBtn.addEventListener('click', initGame);
+        // restartGameBtn.addEventListener('click', initGame);
+        // messageCloseBtn.addEventListener('click', hideMessageBox);
+
+
+        // Initial setup on window load
+        window.onload = function() {
+            // Assign DOM elements once the document is fully loaded
+            startScreen = document.getElementById('startScreen');
+            gamePlayScreen = document.getElementById('gamePlayScreen');
+            endGameScreen = document.getElementById('endGameScreen');
+            startGameBtn = document.getElementById('startGameBtn');
+            restartGameBtn = document.getElementById('restartGameBtn');
+            eventCardsContainer = document.getElementById('eventCardsContainer');
+            timelineElement = document.getElementById('timeline');
+            timelineContentElement = document.getElementById('timelineContent'); // Get the new inner content element
+            placedCardsDisplay = document.getElementById('placedCardsDisplay');
+            finalScoreElement = document.getElementById('finalScore');
+            summaryContainer = document.getElementById('summaryContainer');
+            messageBox = document.getElementById('messageBox');
+            messageText = document.getElementById('messageText');
+            messageCloseBtn = document.getElementById('messageCloseBtn');
+
+            // Add event listeners now that elements are guaranteed to exist
+            startGameBtn.addEventListener('click', initGame);
+            restartGameBtn.addEventListener('click', initGame);
+            messageCloseBtn.addEventListener('click', hideMessageBox);
+
+            // Start screen is visible by default
+            startScreen.classList.remove('hidden');
+            gamePlayScreen.classList.add('hidden');
+            endGameScreen.classList.add('hidden');
+        };
+
+    </script>
+</body>
+</html>
